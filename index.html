@@ -116,6 +116,7 @@ details summary{cursor:pointer;color:var(--dim);font-size:14px}
   <div class="hist-head"><label>Playlist</label><button type="button" class="linkbtn" id="clearPl">Clear all</button></div>
   <div class="plctl">
     <button type="button" class="btn go" id="plPlay">Play all</button>
+    <button type="button" class="btn" id="plSave">Save all</button>
     <label class="hint" style="margin:0;text-transform:none;letter-spacing:0">Gap <select id="plGap" style="width:auto;padding:6px"><option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option><option value="5">5 s</option><option value="10">10 s</option></select></label>
   </div>
   <div id="playlist"></div>
@@ -314,6 +315,7 @@ function renderPl(){
   var box = $("playlist"); box.innerHTML = "";
   var p = pl();
   $("clearPl").style.display = p.length ? "" : "none";
+  $("plSave").disabled = !p.length || plRunning;
   $("plPlay").disabled = !p.length && !plRunning;
   $("plPlay").textContent = plRunning ? "Stop" : "Play all";
   if (!p.length){ var h = document.createElement("div"); h.className = "hint"; h.textContent = "Use + Add to playlist, or + Playlist on a History message. The MP3 is made straight away, ready to play."; box.appendChild(h); return; }
@@ -572,16 +574,46 @@ function transmit(text){
 $("addpl").addEventListener("click", function(){ addPl($("msg").value); });
 $("ptt").addEventListener("click", function(){ transmit($("msg").value); });
 
+var TOUCH = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function download(blob, name){
+  var a = document.createElement("a"), u = URL.createObjectURL(blob);
+  a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(u); }, 10000);
+}
+function shareFiles(files){
+  try { if (TOUCH && navigator.canShare && navigator.canShare({ files: files })){ return navigator.share({ files: files }).then(function(){ return true; }, function(){ return true; }); } } catch(e){}
+  return Promise.resolve(false);
+}
 $("save").addEventListener("click", function(){
   if (!lastBlob) return;
-  var file = null;
-  try { file = new File([lastBlob], lastName, { type: "audio/mpeg" }); } catch(e){}
-  if (file && navigator.canShare && navigator.canShare({ files: [file] })){
-    navigator.share({ files: [file], title: lastName }).catch(function(){});
-    return;
-  }
-  var a = document.createElement("a"); a.href = URL.createObjectURL(lastBlob); a.download = lastName;
-  document.body.appendChild(a); a.click(); a.remove();
+  var f = null; try { f = new File([lastBlob], lastName, { type: "audio/mpeg" }); } catch(e){}
+  (f ? shareFiles([f]) : Promise.resolve(false)).then(function(shared){
+    if (!shared){ download(lastBlob, lastName); status("Saved " + lastName + " to Downloads.", "ok"); }
+  });
+});
+$("plSave").addEventListener("click", function(){
+  var items = pl(); if (!items.length) return;
+  var btn = this; btn.disabled = true; status("Gathering " + items.length + " MP3s…", "ok");
+  var out = [];
+  items.reduce(function(chain, it, i){
+    return chain.then(function(){
+      return (it.k ? (cache[it.k] ? Promise.resolve(cache[it.k]) : idbGet(it.k)) : Promise.resolve(null)).then(function(b){
+        return b || generate(it.t).then(function(r){ return r.blob; });
+      }).then(function(b){
+        var n = String(i + 1).padStart(2, "0") + "_" + fileName(it.t);
+        out.push({ b: b, n: n });
+      });
+    });
+  }, Promise.resolve()).then(function(){
+    var files = null;
+    try { files = out.map(function(o){ return new File([o.b], o.n, { type: "audio/mpeg" }); }); } catch(e){}
+    return (files ? shareFiles(files) : Promise.resolve(false)).then(function(shared){
+      if (shared){ status("Shared " + out.length + " MP3s.", "ok"); return; }
+      return out.reduce(function(c, o){ return c.then(function(){ download(o.b, o.n); return new Promise(function(r){ setTimeout(r, 400); }); }); }, Promise.resolve())
+        .then(function(){ status("Saved " + out.length + " MP3s to Downloads. If the browser asks to allow multiple downloads, choose Allow.", "ok"); });
+    });
+  }).catch(function(err){ status(err.message || String(err), "err"); })
+  .then(function(){ btn.disabled = false; });
 });
 </script>
 </body>
