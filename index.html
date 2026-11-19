@@ -468,7 +468,13 @@ function rng(seed){ var s = seed >>> 0; return function(){ s = (s * 1664525 + 10
 function biquad(ctx, type, f, q, g){ var b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; if (q != null) b.Q.value = q; if (g != null) b.gain.value = g; return b; }
 function chain(nodes){ for (var i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i+1]); return nodes; }
 
+function peakOf(buf){
+  var p = 0;
+  for (var c = 0; c < buf.numberOfChannels; c++){ var d = buf.getChannelData(c); for (var i = 0; i < d.length; i += 4){ var m = Math.abs(d[i]); if (m > p) p = m; } }
+  return p;
+}
 function radioize(voice, opts){
+  if (!voice || !voice.duration || peakOf(voice) < 0.003) return Promise.reject(new Error("ElevenLabs sent back silent audio for this voice. Try again, or pick a different voice for this message."));
   var P = PRESETS[opts.signal] || PRESETS.normal;
   var sr = 44100, pre = 0.32, post = 0.38;
   var dur = pre + voice.duration + post;
@@ -596,8 +602,22 @@ function tx(mode, fn){
     t.onerror = function(){ rej(t.error); };
   }); });
 }
-function idbPut(k, b){ return tx("readwrite", function(s){ s.put(b, k); }).catch(function(){}); }
-function idbGet(k){ return tx("readonly", function(s){ return s.get(k); }).catch(function(){ return null; }); }
+function blobBytes(b){
+  if (b.arrayBuffer) return b.arrayBuffer();
+  return new Promise(function(res, rej){ var r = new FileReader(); r.onload = function(){ res(r.result); }; r.onerror = function(){ rej(r.error); }; r.readAsArrayBuffer(b); });
+}
+// Saved as raw bytes: Safari can hand back empty Blobs from IndexedDB.
+function idbPut(k, b){
+  return blobBytes(b).then(function(buf){ return tx("readwrite", function(s){ s.put({ mp3: buf }, k); }); }).catch(function(){});
+}
+function idbGet(k){
+  return tx("readonly", function(s){ return s.get(k); }).then(function(v){
+    if (!v) return null;
+    if (v.mp3 && v.mp3.byteLength > 2000) return new Blob([v.mp3], { type: "audio/mpeg" });
+    if (v instanceof Blob && v.size > 2000) return v;
+    return null; // empty or unreadable: make it again
+  }).catch(function(){ return null; });
+}
 function idbDel(k){ return tx("readwrite", function(s){ s.delete(k); }).catch(function(){}); }
 function idbKeys(){ return tx("readonly", function(s){ return s.getAllKeys(); }).then(function(k){ return k || []; }, function(){ return []; }); }
 
