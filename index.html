@@ -35,7 +35,14 @@ input[type=range]{width:100%;accent-color:var(--amber)}
 .msg{margin-top:12px;font-size:14px;padding:10px;border-radius:8px;display:none}
 .msg.err{display:block;background:#3a1517;color:#ffb3b5}
 .msg.ok{display:block;background:#15301c;color:#a6f0b7}
-.recent button{display:block;width:100%;text-align:left;background:#0f1113;color:var(--txt);border:1px solid var(--edge);border-radius:8px;padding:8px 10px;margin-bottom:6px;font:inherit;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-head{display:flex;justify-content:space-between;align-items:center}
+.hist-head label{margin:0}
+.item{display:flex;align-items:center;gap:8px;background:#0f1113;border:1px solid var(--edge);border-radius:8px;padding:8px 10px;margin-bottom:6px}
+.item .t{flex:1;font-size:14px;min-width:0;overflow-wrap:anywhere}
+.item button{background:#2a3036;color:var(--txt);border:1px solid var(--edge);border-radius:6px;padding:7px 11px;font:inherit;font-size:14px;white-space:nowrap}
+.item button.go{background:#8f2327;border-color:#6b1d20;color:#fff}
+.item button.x{background:transparent;border:0;color:var(--dim);padding:7px 4px}
+.linkbtn{background:none;border:0;color:var(--dim);font:inherit;font-size:13px;text-decoration:underline;padding:4px}
 details summary{cursor:pointer;color:var(--dim);font-size:14px}
 .hint{font-size:13px;color:var(--dim)}
 </style>
@@ -85,8 +92,9 @@ details summary{cursor:pointer;color:var(--dim);font-size:14px}
 </div>
 
 <div class="head">
-  <label style="margin-top:0">Recent messages</label>
-  <div class="recent" id="recent"></div>
+  <div class="hist-head"><label>History</label><button type="button" class="linkbtn" id="clearHist">Clear all</button></div>
+  <div class="hint" style="margin:4px 0 10px">Use puts a message back in the box to edit. Transmit sends it again straight away.</div>
+  <div id="recent"></div>
 </div>
 
 <div class="head">
@@ -199,20 +207,34 @@ function renderSpoken(){
 renderSpoken();
 
 function recent(){ try { return JSON.parse(store.get("recent", "[]")); } catch(e){ return []; } }
-function addRecent(t){
-  var r = recent().filter(function(x){ return x !== t; });
-  r.unshift(t); store.set("recent", JSON.stringify(r.slice(0, 15))); renderRecent();
-}
+function saveRecent(r){ store.set("recent", JSON.stringify(r.slice(0, 50))); renderRecent(); }
+function addRecent(t){ saveRecent([t].concat(recent().filter(function(x){ return x !== t; }))); }
+function useMsg(t){ $("msg").value = t; store.set("draft", t); renderSpoken(); }
 function renderRecent(){
   var box = $("recent"); box.innerHTML = "";
   var r = recent();
-  if (!r.length){ var p = document.createElement("div"); p.className = "hint"; p.textContent = "Messages you transmit appear here."; box.appendChild(p); return; }
+  $("clearHist").style.display = r.length ? "" : "none";
+  if (!r.length){ var p = document.createElement("div"); p.className = "hint"; p.textContent = "Messages you transmit are listed here."; box.appendChild(p); return; }
   r.forEach(function(t){
-    var b = document.createElement("button"); b.type = "button"; b.textContent = t; b.title = t;
-    b.addEventListener("click", function(){ $("msg").value = t; store.set("draft", t); renderSpoken(); $("msg").focus(); });
-    box.appendChild(b);
+    var row = document.createElement("div"); row.className = "item";
+    var tx = document.createElement("div"); tx.className = "t"; tx.textContent = t;
+    var use = document.createElement("button"); use.type = "button"; use.textContent = "Use";
+    use.addEventListener("click", function(){ useMsg(t); window.scrollTo({ top: 0, behavior: "smooth" }); $("msg").focus(); });
+    var go = document.createElement("button"); go.type = "button"; go.className = "go"; go.textContent = "Transmit";
+    go.addEventListener("click", function(){ useMsg(t); window.scrollTo({ top: 0, behavior: "smooth" }); $("ptt").click(); });
+    var del = document.createElement("button"); del.type = "button"; del.className = "x"; del.textContent = "✕"; del.setAttribute("aria-label", "Remove");
+    del.addEventListener("click", function(){ saveRecent(recent().filter(function(x){ return x !== t; })); });
+    row.appendChild(tx); row.appendChild(use); row.appendChild(go); row.appendChild(del);
+    box.appendChild(row);
   });
 }
+var clearArmed = null;
+$("clearHist").addEventListener("click", function(){
+  var b = this;
+  if (clearArmed){ clearTimeout(clearArmed); clearArmed = null; b.textContent = "Clear all"; saveRecent([]); return; }
+  b.textContent = "Tap again to clear";
+  clearArmed = setTimeout(function(){ clearArmed = null; b.textContent = "Clear all"; }, 3000);
+});
 renderRecent();
 
 function status(text, kind){ var s = $("status"); s.textContent = text; s.className = "msg " + (kind || ""); }
