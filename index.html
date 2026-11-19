@@ -15,10 +15,6 @@ body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 -apple-system,
 .wrap{max-width:820px;margin:0 auto}
 h1{font-size:15px;letter-spacing:.2em;color:var(--dim);margin:0 0 12px;font-weight:600}
 .head{background:linear-gradient(#2a2f33,#1c1f22);border:1px solid var(--edge);border-radius:14px;padding:16px;margin-bottom:14px}
-.lcd{background:var(--lcd);border:2px solid #000;border-radius:8px;padding:12px 14px;font-family:"SF Mono",Menlo,monospace;color:var(--lcdtxt);display:flex;justify-content:space-between;align-items:center;gap:12px}
-.lcd input{background:transparent;border:0;color:var(--lcdtxt);font:inherit;font-size:30px;width:9ch;outline:none}
-.lcd .st{font-size:13px;text-align:right;color:#4fbf6a}
-.lcd .tx{color:var(--amber)}
 label{display:block;font-size:12px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase;margin:14px 0 6px}
 textarea,input[type=text],input[type=password],select{width:100%;background:#0f1113;color:var(--txt);border:1px solid var(--edge);border-radius:8px;padding:10px;font:inherit}
 textarea{min-height:96px;resize:vertical}
@@ -49,15 +45,7 @@ details summary{cursor:pointer;color:var(--dim);font-size:14px}
 <h1>ATC RADIO · MESSAGE GENERATOR</h1>
 
 <div class="head">
-  <div class="lcd">
-    <div>
-      <div style="font-size:11px;color:#4fbf6a">FREQ</div>
-      <input id="freq" type="text" inputmode="decimal" value="126.700" aria-label="Frequency">
-    </div>
-    <div class="st" id="lcdStatus">STBY</div>
-  </div>
-
-  <label for="msg">Message</label>
+  <label for="msg" style="margin-top:0">Message</label>
   <textarea id="msg" placeholder="Speedbird 214, London Control, descend FL120, turn left heading 270."></textarea>
   <div class="spoken" id="spoken"></div>
 
@@ -195,14 +183,12 @@ $("niner").checked = store.get("niner", "1") === "1";
 $("apiKey").value = store.get("key", "");
 $("voiceId").value = store.get("voice", $("voiceId").value);
 $("model").value = store.get("model", $("model").value);
-$("freq").value = store.get("freq", $("freq").value);
 $("msg").value = store.get("draft", "");
 if (!$("apiKey").value) $("setup").open = true;
 
 $("apiKey").addEventListener("change", function(){ store.set("key", this.value.trim()); });
 $("voiceId").addEventListener("change", function(){ store.set("voice", this.value.trim()); });
 $("model").addEventListener("change", function(){ store.set("model", this.value); });
-$("freq").addEventListener("change", function(){ store.set("freq", this.value.trim()); });
 $("niner").addEventListener("change", function(){ store.set("niner", this.checked ? "1" : "0"); renderSpoken(); });
 $("msg").addEventListener("input", function(){ store.set("draft", this.value); renderSpoken(); });
 
@@ -230,7 +216,7 @@ function renderRecent(){
 renderRecent();
 
 function status(text, kind){ var s = $("status"); s.textContent = text; s.className = "msg " + (kind || ""); }
-function lcd(text, tx){ var l = $("lcdStatus"); l.textContent = text; l.className = "st" + (tx ? " tx" : ""); }
+function lcd(){}
 
 /* ---------- ElevenLabs ---------- */
 function tts(text){
@@ -360,9 +346,9 @@ function toMp3(buf){
 
 /* ---------- Transmit ---------- */
 var lastBlob = null, lastName = "atc.mp3", audioCtx = null;
-function fileName(freq, text){
+function fileName(text){
   var slug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "message";
-  return (freq ? freq.replace(/[^0-9.]/g, "") + "_" : "") + slug + ".mp3";
+  return "atc_" + slug + ".mp3";
 }
 
 $("ptt").addEventListener("click", function(){
@@ -381,7 +367,7 @@ $("ptt").addEventListener("click", function(){
   }).then(function(buf){
     status("Encoding MP3…", "ok");
     lastBlob = toMp3(buf);
-    lastName = fileName($("freq").value, text);
+    lastName = fileName(text);
     var p = $("player"); if (p.src) URL.revokeObjectURL(p.src);
     p.src = URL.createObjectURL(lastBlob);
     $("out").style.display = "block";
