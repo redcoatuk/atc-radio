@@ -30,8 +30,10 @@ textarea{min-height:96px;resize:vertical}
 .seg button.on{background:#2d3a2f;color:var(--lcdtxt)}
 input[type=range]{width:100%;accent-color:var(--amber)}
 .tog{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:14px}
-.ptt{width:100%;margin-top:18px;padding:18px;font-size:20px;font-weight:700;letter-spacing:.15em;border-radius:12px;border:1px solid #6b1d20;background:linear-gradient(#c23a3f,#8f2327);color:#fff}
-.ptt:disabled{opacity:.6}
+.pttrow{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.ptt{flex:0 0 auto;padding:11px 26px;font-size:16px;font-weight:700;letter-spacing:.15em;border-radius:12px;border:1px solid #6b1d20;background:linear-gradient(#c23a3f,#8f2327);color:#fff}
+.ptt:disabled,.addpl:disabled{opacity:.6}
+.addpl{padding:11px 18px;font-size:16px;font-weight:600;border-radius:12px;border:1px solid var(--edge);background:#2a3036;color:var(--txt)}
 .out{display:none;margin-top:14px}
 .out audio{width:100%}
 .btn{background:#2a3036;color:var(--txt);border:1px solid var(--edge);border-radius:8px;padding:10px 14px;font:inherit;margin-top:10px}
@@ -92,7 +94,10 @@ details summary{cursor:pointer;color:var(--dim);font-size:14px}
   </div>
   <div class="tog"><input type="checkbox" id="niner" checked><label for="niner" style="margin:0;text-transform:none;letter-spacing:0;font-size:14px;color:var(--txt)">Say “niner” for 9</label></div>
 
-  <button class="ptt" id="ptt" type="button">TRANSMIT</button>
+  <div class="pttrow">
+    <button class="ptt" id="ptt" type="button">TRANSMIT</button>
+    <button class="addpl" id="addpl" type="button">+ Add to playlist</button>
+  </div>
   <div class="msg" id="status"></div>
 
   <div class="out" id="out">
@@ -110,7 +115,7 @@ details summary{cursor:pointer;color:var(--dim);font-size:14px}
 <div class="head">
   <div class="hist-head"><label>Playlist</label><button type="button" class="linkbtn" id="clearPl">Clear all</button></div>
   <div class="plctl">
-    <button type="button" class="btn go" id="plPlay">Transmit all</button>
+    <button type="button" class="btn go" id="plPlay">Play all</button>
     <label class="hint" style="margin:0;text-transform:none;letter-spacing:0">Gap <select id="plGap" style="width:auto;padding:6px"><option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option><option value="5">5 s</option><option value="10">10 s</option></select></label>
   </div>
   <div id="playlist"></div>
@@ -270,9 +275,39 @@ function armedClear(btn, fn){
 }
 
 /* ---------- Playlist ---------- */
-function pl(){ try { return JSON.parse(store.get("playlist", "[]")); } catch(e){ return []; } }
-function savePl(p){ store.set("playlist", JSON.stringify(p)); renderPl(); }
-function addPl(t){ var p = pl(); p.push(t); savePl(p); }
+function pl(){
+  var p; try { p = JSON.parse(store.get("playlist", "[]")); } catch(e){ p = []; }
+  return p.map(function(x){ return typeof x === "string" ? { t: x, k: null } : x; });
+}
+function savePl(p){ store.set("playlist", JSON.stringify(p)); renderPl(); prunePl(); }
+function prunePl(){
+  var keep = {}; pl().forEach(function(x){ if (x.k) keep[x.k] = 1; });
+  idbKeys().then(function(ks){ ks.forEach(function(k){ if (!keep[k]) idbDel(k); }); });
+}
+var adding = false;
+function addPl(text){
+  text = (text || "").trim();
+  if (!text){ status("Type a message first.", "err"); return; }
+  if (adding) return;
+  adding = true; $("addpl").disabled = true;
+  generate(text).then(function(r){
+    return idbPut(r.key, r.blob).then(function(){
+      var p = pl(); p.push({ t: text, k: r.key }); savePl(p);
+      addRecent(text);
+      status("Added to playlist, MP3 ready: " + fileName(text), "ok");
+    });
+  }).catch(function(err){ status(err.message || String(err), "err"); })
+  .then(function(){ adding = false; $("addpl").disabled = false; });
+}
+function playItem(it){
+  unlockAudio();
+  if (!it.k) return transmit(it.t);
+  return (cache[it.k] ? Promise.resolve(cache[it.k]) : idbGet(it.k)).then(function(b){
+    if (!b) return transmit(it.t);
+    cache[it.k] = b; status("Playing " + fileName(it.t), "ok");
+    return play(b, it.t);
+  });
+}
 function movePl(i, d){ var p = pl(), j = i + d; if (j < 0 || j >= p.length) return; var x = p[i]; p[i] = p[j]; p[j] = x; savePl(p); }
 var plNow = -1, plRunning = false;
 function renderPl(){
@@ -280,11 +315,11 @@ function renderPl(){
   var p = pl();
   $("clearPl").style.display = p.length ? "" : "none";
   $("plPlay").disabled = !p.length && !plRunning;
-  $("plPlay").textContent = plRunning ? "Stop" : "Transmit all";
-  if (!p.length){ var h = document.createElement("div"); h.className = "hint"; h.textContent = "Tap + Playlist on a History message to add it here."; box.appendChild(h); return; }
-  p.forEach(function(t, i){
-    var r = row(t, [
-      ["Transmit", "go", plRunning ? null : function(){ useMsg(t); transmit(t); }],
+  $("plPlay").textContent = plRunning ? "Stop" : "Play all";
+  if (!p.length){ var h = document.createElement("div"); h.className = "hint"; h.textContent = "Use + Add to playlist, or + Playlist on a History message. The MP3 is made straight away, ready to play."; box.appendChild(h); return; }
+  p.forEach(function(it, i){
+    var r = row(it.t + (it.k ? "  ♪" : ""), [
+      ["Play", "go", plRunning ? null : function(){ playItem(it); }],
       ["↑", "", i > 0 && !plRunning ? function(){ movePl(i, -1); } : null, "Move up"],
       ["↓", "", i < p.length - 1 && !plRunning ? function(){ movePl(i, 1); } : null, "Move down"],
       ["✕", "x", plRunning ? null : function(){ var q = pl(); q.splice(i, 1); savePl(q); }, "Remove"]
@@ -315,9 +350,9 @@ $("plPlay").addEventListener("click", function(){
   var i = 0;
   (function next(){
     if (!plRunning || i >= items.length){ var fin = plRunning; plRunning = false; plNow = -1; renderPl(); if (fin) status("Playlist finished.", "ok"); return; }
-    plNow = i; renderPl(); useMsg(items[i]);
-    transmit(items[i]).then(function(ok){
-      if (!ok){ var was = plRunning; plRunning = false; plNow = -1; renderPl(); if (was && /^Ready/.test($("status").textContent)) status("The iPad blocked playback. Tap Transmit all again.", "err"); return; }
+    plNow = i; renderPl();
+    playItem(items[i]).then(function(ok){
+      if (!ok){ var was = plRunning; plRunning = false; plNow = -1; renderPl(); if (was && /^Ready/.test($("status").textContent)) status("The iPad blocked playback. Tap Play all again.", "err"); return; }
       return waitEnd().then(function(){ i++; return i < items.length ? sleep(+$("plGap").value) : null; }).then(next);
     });
   })();
@@ -476,35 +511,65 @@ function play(blob, text){
   $("out").style.display = "block";
   return p.play().then(function(){ return true; }, function(){ return false; });
 }
+/* ---------- Saved playlist audio (IndexedDB) ---------- */
+var dbP = null;
+function db(){
+  if (!dbP) dbP = new Promise(function(res, rej){
+    try { var r = indexedDB.open("atc-radio", 1);
+      r.onupgradeneeded = function(){ r.result.createObjectStore("mp3"); };
+      r.onsuccess = function(){ res(r.result); }; r.onerror = function(){ rej(r.error); };
+    } catch(e){ rej(e); }
+  });
+  return dbP;
+}
+function tx(mode, fn){
+  return db().then(function(d){ return new Promise(function(res, rej){
+    var t = d.transaction("mp3", mode), st = t.objectStore("mp3"), out = fn(st);
+    t.oncomplete = function(){ res(out && "result" in out ? out.result : undefined); };
+    t.onerror = function(){ rej(t.error); };
+  }); });
+}
+function idbPut(k, b){ return tx("readwrite", function(s){ s.put(b, k); }).catch(function(){}); }
+function idbGet(k){ return tx("readonly", function(s){ return s.get(k); }).catch(function(){ return null; }); }
+function idbDel(k){ return tx("readwrite", function(s){ s.delete(k); }).catch(function(){}); }
+function idbKeys(){ return tx("readonly", function(s){ return s.getAllKeys(); }).then(function(k){ return k || []; }, function(){ return []; }); }
+
+// Make (or reuse) the MP3 for a message. Resolves {key, blob, fresh}; throws on error.
+function generate(text){
+  var key = settingsKey(text);
+  unlockAudio();
+  if (cache[key]) return Promise.resolve({ key: key, blob: cache[key], fresh: false });
+  return idbGet(key).then(function(saved){
+    if (saved){ cache[key] = saved; return { key: key, blob: saved, fresh: false }; }
+    if (!$("apiKey").value.trim()){ $("setup").open = true; throw new Error("Add your ElevenLabs API key in Setup first."); }
+    store.set("key", $("apiKey").value.trim());
+    status("Getting Andrew's voice…", "ok");
+    return tts(toSpoken(text, $("niner").checked)).then(function(ab){
+      status("Adding the radio effect…", "ok");
+      return new Promise(function(res, rej){ audioCtx.decodeAudioData(ab, res, function(){ rej(new Error("Couldn't decode the audio from ElevenLabs.")); }); });
+    }).then(function(voice){
+      return radioize(voice, { signal: signal, static: +$("static").value, crackle: +$("crackle").value });
+    }).then(function(buf){
+      status("Encoding MP3…", "ok");
+      var blob = toMp3(buf); cache[key] = blob;
+      return { key: key, blob: blob, fresh: true };
+    });
+  });
+}
 // Returns a promise of true (played) or false (failed)
 function transmit(text){
   text = (text || "").trim();
   if (!text){ status("Type a message first.", "err"); return Promise.resolve(false); }
-  var key = settingsKey(text);
-  unlockAudio();
-  if (cache[key]){
-    addRecent(text); status("Replaying " + fileName(text) + " (no credits used)", "ok");
-    return play(cache[key], text);
-  }
-  if (!$("apiKey").value.trim()){ $("setup").open = true; status("Add your ElevenLabs API key in Setup first.", "err"); return Promise.resolve(false); }
-  store.set("key", $("apiKey").value.trim());
-  var btn = $("ptt"); btn.disabled = true; status("Getting Andrew's voice…", "ok");
-  return tts(toSpoken(text, $("niner").checked)).then(function(ab){
-    status("Adding the radio effect…", "ok");
-    return new Promise(function(res, rej){ audioCtx.decodeAudioData(ab, res, function(){ rej(new Error("Couldn't decode the audio from ElevenLabs.")); }); });
-  }).then(function(voice){
-    return radioize(voice, { signal: signal, static: +$("static").value, crackle: +$("crackle").value });
-  }).then(function(buf){
-    status("Encoding MP3…", "ok");
-    var blob = toMp3(buf);
-    cache[key] = blob;
+  var btn = $("ptt"); btn.disabled = true;
+  return generate(text).then(function(r){
     addRecent(text);
-    status("Ready: " + fileName(text) + " (" + Math.round(blob.size / 1024) + " KB)", "ok");
-    return play(blob, text).then(function(ok){ if (!ok) status("Ready: tap play below to hear it.", "ok"); return ok; });
+    status(r.fresh ? "Ready: " + fileName(text) + " (" + Math.round(r.blob.size / 1024) + " KB)" : "Replaying " + fileName(text) + " (no credits used)", "ok");
+    return play(r.blob, text).then(function(ok){ if (!ok) status("Ready: tap play below to hear it.", "ok"); return ok; });
   }).catch(function(err){
     status(err.message || String(err), "err"); return false;
   }).then(function(ok){ btn.disabled = false; return ok; });
 }
+$("addpl").addEventListener("click", function(){ addPl($("msg").value); });
 $("ptt").addEventListener("click", function(){ transmit($("msg").value); });
 
 $("save").addEventListener("click", function(){
