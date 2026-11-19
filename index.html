@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="ATC Radio">
+<title>ATC Radio</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<style>
+:root{--bg:#141618;--panel:#1f2326;--edge:#33393e;--lcd:#0d1a12;--lcdtxt:#7dff9a;--amber:#ffb340;--txt:#e6e8ea;--dim:#8a9399;--red:#e5484d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 -apple-system,system-ui,sans-serif;padding:16px;padding-bottom:40px}
+.wrap{max-width:820px;margin:0 auto}
+h1{font-size:15px;letter-spacing:.2em;color:var(--dim);margin:0 0 12px;font-weight:600}
+.head{background:linear-gradient(#2a2f33,#1c1f22);border:1px solid var(--edge);border-radius:14px;padding:16px;margin-bottom:14px}
+.lcd{background:var(--lcd);border:2px solid #000;border-radius:8px;padding:12px 14px;font-family:"SF Mono",Menlo,monospace;color:var(--lcdtxt);display:flex;justify-content:space-between;align-items:center;gap:12px}
+.lcd input{background:transparent;border:0;color:var(--lcdtxt);font:inherit;font-size:30px;width:9ch;outline:none}
+.lcd .st{font-size:13px;text-align:right;color:#4fbf6a}
+.lcd .tx{color:var(--amber)}
+label{display:block;font-size:12px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase;margin:14px 0 6px}
+textarea,input[type=text],input[type=password],select{width:100%;background:#0f1113;color:var(--txt);border:1px solid var(--edge);border-radius:8px;padding:10px;font:inherit}
+textarea{min-height:96px;resize:vertical}
+.spoken{font-size:14px;color:var(--amber);margin-top:6px;min-height:1.4em}
+.row{display:flex;gap:14px;flex-wrap:wrap}
+.row>div{flex:1;min-width:200px}
+.seg{display:flex;border:1px solid var(--edge);border-radius:8px;overflow:hidden}
+.seg button{flex:1;background:#0f1113;color:var(--dim);border:0;padding:10px;font:inherit;border-right:1px solid var(--edge)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:#2d3a2f;color:var(--lcdtxt)}
+input[type=range]{width:100%;accent-color:var(--amber)}
+.tog{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:14px}
+.ptt{width:100%;margin-top:18px;padding:18px;font-size:20px;font-weight:700;letter-spacing:.15em;border-radius:12px;border:1px solid #6b1d20;background:linear-gradient(#c23a3f,#8f2327);color:#fff}
+.ptt:disabled{opacity:.6}
+.out{display:none;margin-top:14px}
+.out audio{width:100%}
+.btn{background:#2a3036;color:var(--txt);border:1px solid var(--edge);border-radius:8px;padding:10px 14px;font:inherit;margin-top:10px}
+.msg{margin-top:12px;font-size:14px;padding:10px;border-radius:8px;display:none}
+.msg.err{display:block;background:#3a1517;color:#ffb3b5}
+.msg.ok{display:block;background:#15301c;color:#a6f0b7}
+.recent button{display:block;width:100%;text-align:left;background:#0f1113;color:var(--txt);border:1px solid var(--edge);border-radius:8px;padding:8px 10px;margin-bottom:6px;font:inherit;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+details summary{cursor:pointer;color:var(--dim);font-size:14px}
+.hint{font-size:13px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>ATC RADIO · MESSAGE GENERATOR</h1>
+
+<div class="head">
+  <div class="lcd">
+    <div>
+      <div style="font-size:11px;color:#4fbf6a">FREQ</div>
+      <input id="freq" type="text" inputmode="decimal" value="126.700" aria-label="Frequency">
+    </div>
+    <div class="st" id="lcdStatus">STBY</div>
+  </div>
+
+  <label for="msg">Message</label>
+  <textarea id="msg" placeholder="Speedbird 214, London Control, descend FL120, turn left heading 270."></textarea>
+  <div class="spoken" id="spoken"></div>
+
+  <div class="row">
+    <div>
+      <label>Signal</label>
+      <div class="seg" id="signal">
+        <button type="button" data-v="strong">Strong</button>
+        <button type="button" data-v="normal" class="on">Normal</button>
+        <button type="button" data-v="weak">Weak</button>
+      </div>
+    </div>
+    <div>
+      <label for="static">Static level <span id="staticV"></span></label>
+      <input id="static" type="range" min="0" max="100" value="40">
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label for="crackle">Crackle <span id="crackleV"></span></label>
+      <input id="crackle" type="range" min="0" max="100" value="35">
+    </div>
+    <div>
+      <label for="speed">Speech speed <span id="speedV"></span></label>
+      <input id="speed" type="range" min="80" max="120" value="105">
+    </div>
+  </div>
+  <div class="tog"><input type="checkbox" id="niner" checked><label for="niner" style="margin:0;text-transform:none;letter-spacing:0;font-size:14px;color:var(--txt)">Say “niner” for 9</label></div>
+
+  <button class="ptt" id="ptt" type="button">TRANSMIT</button>
+  <div class="msg" id="status"></div>
+
+  <div class="out" id="out">
+    <audio id="player" controls playsinline></audio>
+    <button class="btn" id="save" type="button">Save MP3</button>
+  </div>
+</div>
+
+<div class="head">
+  <label style="margin-top:0">Recent messages</label>
+  <div class="recent" id="recent"></div>
+</div>
+
+<div class="head">
+  <details id="setup">
+    <summary>Setup</summary>
+    <label for="apiKey">ElevenLabs API key</label>
+    <input id="apiKey" type="password" autocomplete="off" placeholder="sk_…">
+    <div class="hint">Stored only in this browser on this device.</div>
+    <label for="voiceId">Voice ID</label>
+    <input id="voiceId" type="text" value="jR6tjweqjDI3m7B2nd5t">
+    <div class="hint">Default is Andrew.</div>
+    <label for="model">Model</label>
+    <select id="model">
+      <option value="eleven_multilingual_v2">Multilingual v2 (most natural)</option>
+      <option value="eleven_turbo_v2_5">Turbo v2.5 (faster, cheaper)</option>
+      <option value="eleven_flash_v2_5">Flash v2.5 (fastest, cheapest)</option>
+      <option value="eleven_v3">v3</option>
+    </select>
+  </details>
+</div>
+</div>
+
+<script>
+"use strict";
+var $ = function(id){ return document.getElementById(id); };
+var store = {
+  get: function(k, d){ try { var v = localStorage.getItem("atc_" + k); return v === null ? d : v; } catch(e){ return d; } },
+  set: function(k, v){ try { localStorage.setItem("atc_" + k, v); } catch(e){} }
+};
+
+/* ---------- ATC phraseology ---------- */
+var DIG = ["zero","one","two","three","four","five","six","seven","eight","nine"];
+function digits(s, niner){
+  return String(s).split("").map(function(c){
+    if (c === "9" && niner) return "niner";
+    return /\d/.test(c) ? DIG[+c] : c;
+  }).join(" ");
+}
+function altitude(n, niner){
+  // ICAO: whole thousands digit-by-digit + "thousand", then "X hundred"
+  var th = Math.floor(n / 1000), hu = Math.floor((n % 1000) / 100);
+  var parts = [];
+  if (th) parts.push(digits(String(th), niner) + " thousand");
+  if (hu) parts.push(digits(String(hu), niner) + " hundred");
+  return parts.join(" ");
+}
+function freqWords(f, niner){
+  var p = f.split(".");
+  var dec = (p[1] || "").replace(/0+$/, "");
+  if (!dec) dec = "0";
+  return digits(p[0], niner) + " decimal " + digits(dec, niner);
+}
+function toSpoken(text, niner){
+  var t = " " + text + " ";
+  // Flight levels: FL120, FL 120
+  t = t.replace(/\bFL\s?(\d{2,3})\b/gi, function(_, d){ return "flight level " + digits(d, niner); });
+  // Frequencies: 126.700, 118.025
+  t = t.replace(/\b(1[1-3]\d)\.(\d{1,3})\b/g, function(m){ return freqWords(m, niner); });
+  // Altitudes with unit, or after "altitude": 2500 ft, 3,000 feet
+  t = t.replace(/\b(\d{1,2},?\d{3}|\d{3,5})\s?(ft|feet)\b/gi, function(m, n){
+    var v = +n.replace(",", "");
+    return (v >= 1000 && v % 100 === 0 ? altitude(v, niner) : digits(String(v), niner)) + " feet";
+  });
+  t = t.replace(/\b(altitude)\s+(\d{1,2},?\d{3})\b/gi, function(m, w, n){
+    var v = +n.replace(",", "");
+    return w + " " + (v % 100 === 0 ? altitude(v, niner) : digits(String(v), niner));
+  });
+  // Runways: 27L / 09R / 22C
+  t = t.replace(/\b(runway\s+)(\d{2})([LRC])?\b/gi, function(m, w, d, s){
+    var side = s ? " " + ({L:"left",R:"right",C:"centre"})[s.toUpperCase()] : "";
+    return w + digits(d, niner) + side;
+  });
+  // Everything else numeric: digit by digit
+  t = t.replace(/\d+/g, function(d){ return digits(d, niner); });
+  return t.replace(/\s+/g, " ").trim();
+}
+
+/* ---------- UI state ---------- */
+var signal = store.get("signal", "normal");
+function setSignal(v){
+  signal = v; store.set("signal", v);
+  Array.prototype.forEach.call($("signal").children, function(b){ b.classList.toggle("on", b.dataset.v === v); });
+}
+$("signal").addEventListener("click", function(e){ if (e.target.dataset.v) setSignal(e.target.dataset.v); });
+setSignal(signal);
+
+["static","crackle","speed"].forEach(function(id){
+  var el = $(id);
+  el.value = store.get(id, el.value);
+  var show = function(){ $(id + "V").textContent = id === "speed" ? (el.value/100).toFixed(2) + "×" : el.value + "%"; store.set(id, el.value); };
+  el.addEventListener("input", show); show();
+});
+$("niner").checked = store.get("niner", "1") === "1";
+$("apiKey").value = store.get("key", "");
+$("voiceId").value = store.get("voice", $("voiceId").value);
+$("model").value = store.get("model", $("model").value);
+$("freq").value = store.get("freq", $("freq").value);
+$("msg").value = store.get("draft", "");
+if (!$("apiKey").value) $("setup").open = true;
+
+$("apiKey").addEventListener("change", function(){ store.set("key", this.value.trim()); });
+$("voiceId").addEventListener("change", function(){ store.set("voice", this.value.trim()); });
+$("model").addEventListener("change", function(){ store.set("model", this.value); });
+$("freq").addEventListener("change", function(){ store.set("freq", this.value.trim()); });
+$("niner").addEventListener("change", function(){ store.set("niner", this.checked ? "1" : "0"); renderSpoken(); });
+$("msg").addEventListener("input", function(){ store.set("draft", this.value); renderSpoken(); });
+
+function renderSpoken(){
+  var m = $("msg").value.trim();
+  $("spoken").textContent = m ? "Says: " + toSpoken(m, $("niner").checked) : "";
+}
+renderSpoken();
+
+function recent(){ try { return JSON.parse(store.get("recent", "[]")); } catch(e){ return []; } }
+function addRecent(t){
+  var r = recent().filter(function(x){ return x !== t; });
+  r.unshift(t); store.set("recent", JSON.stringify(r.slice(0, 15))); renderRecent();
+}
+function renderRecent(){
+  var box = $("recent"); box.innerHTML = "";
+  var r = recent();
+  if (!r.length){ var p = document.createElement("div"); p.className = "hint"; p.textContent = "Messages you transmit appear here."; box.appendChild(p); return; }
+  r.forEach(function(t){
+    var b = document.createElement("button"); b.type = "button"; b.textContent = t; b.title = t;
+    b.addEventListener("click", function(){ $("msg").value = t; store.set("draft", t); renderSpoken(); $("msg").focus(); });
+    box.appendChild(b);
+  });
+}
+renderRecent();
+
+function status(text, kind){ var s = $("status"); s.textContent = text; s.className = "msg " + (kind || ""); }
+function lcd(text, tx){ var l = $("lcdStatus"); l.textContent = text; l.className = "st" + (tx ? " tx" : ""); }
+
+/* ---------- ElevenLabs ---------- */
+function tts(text){
+  var key = $("apiKey").value.trim();
+  var voice = $("voiceId").value.trim() || "jR6tjweqjDI3m7B2nd5t";
+  var model = $("model").value;
+  var vs = { stability: 0.55, similarity_boost: 0.8, style: 0, use_speaker_boost: true };
+  if (model !== "eleven_v3") vs.speed = Math.min(1.2, Math.max(0.7, $("speed").value / 100));
+  return fetch("https://api.elevenlabs.io/v1/text-to-speech/" + encodeURIComponent(voice) + "?output_format=mp3_44100_128", {
+    method: "POST",
+    headers: { "xi-api-key": key, "Content-Type": "application/json", "Accept": "audio/mpeg" },
+    body: JSON.stringify({ text: text, model_id: model, voice_settings: vs })
+  }).catch(function(){
+    var where = location.protocol === "https:" ? "" : " This page is not running from a web address (" + (location.protocol || "unknown") + "), so requests are blocked. Open it from its hosted https:// link in Safari.";
+    throw new Error("Couldn't reach ElevenLabs." + (where || " Check the internet connection, and open the link in Safari rather than inside another app's preview."));
+  }).then(function(r){
+    if (r.ok) return r.arrayBuffer();
+    return r.text().then(function(body){
+      var msg = "ElevenLabs returned " + r.status + ".";
+      try { var j = JSON.parse(body); var d = j.detail; if (d) msg = typeof d === "string" ? d : (d.message || JSON.stringify(d)); } catch(e){}
+      if (r.status === 401) msg = "ElevenLabs rejected the API key. Check it in Setup. (" + msg + ")";
+      throw new Error(msg);
+    });
+  });
+}
+
+/* ---------- VHF radio effect ---------- */
+var PRESETS = {
+  strong: { noise: 0.6, drive: 2.0, flutter: 0.03, dropouts: 0,   lp: 3200 },
+  normal: { noise: 1.0, drive: 3.0, flutter: 0.08, dropouts: 0,   lp: 3000 },
+  weak:   { noise: 1.9, drive: 4.5, flutter: 0.22, dropouts: 0.7, lp: 2500 }
+};
+function rng(seed){ var s = seed >>> 0; return function(){ s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+function biquad(ctx, type, f, q, g){ var b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; if (q != null) b.Q.value = q; if (g != null) b.gain.value = g; return b; }
+function chain(nodes){ for (var i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i+1]); return nodes; }
+
+function radioize(voice, opts){
+  var P = PRESETS[opts.signal] || PRESETS.normal;
+  var sr = 44100, pre = 0.32, post = 0.38;
+  var dur = pre + voice.duration + post;
+  var len = Math.ceil(dur * sr);
+  var ctx = new OfflineAudioContext(1, len, sr);
+  var rand = rng(Date.now());
+
+  // --- voice branch
+  var src = ctx.createBufferSource(); src.buffer = voice;
+  var sat = ctx.createWaveShaper(), N = 2048, curve = new Float32Array(N), k = P.drive;
+  for (var i = 0; i < N; i++){ var x = i / (N - 1) * 2 - 1; curve[i] = Math.tanh(k * x) / Math.tanh(k); }
+  sat.curve = curve; sat.oversample = "2x";
+  var comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -24; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.12;
+  var vgain = ctx.createGain(); vgain.gain.value = 0.9;
+  chain([src,
+    biquad(ctx, "highpass", 320, 0.7), biquad(ctx, "highpass", 320, 0.7),
+    biquad(ctx, "peaking", 1800, 1.0, 5),
+    sat,
+    biquad(ctx, "lowpass", P.lp, 0.7), biquad(ctx, "lowpass", P.lp, 0.7),
+    comp, vgain, ctx.destination]);
+
+  // flutter (signal fading)
+  var lfo = ctx.createOscillator(); lfo.frequency.value = 5 + rand() * 4;
+  var depth = ctx.createGain(); depth.gain.value = P.flutter;
+  lfo.connect(depth); depth.connect(vgain.gain); lfo.start(0);
+
+  // dropouts on weak signal
+  if (P.dropouts){
+    var n = Math.floor(voice.duration * P.dropouts);
+    for (var d = 0; d < n; d++){
+      var t0 = pre + rand() * voice.duration, w = 0.04 + rand() * 0.12;
+      vgain.gain.setValueAtTime(0.9, t0);
+      vgain.gain.linearRampToValueAtTime(0.15, t0 + 0.015);
+      vgain.gain.setValueAtTime(0.15, t0 + w);
+      vgain.gain.linearRampToValueAtTime(0.9, t0 + w + 0.02);
+    }
+  }
+  src.start(pre);
+
+  // --- noise bed, crackle and squelch, generated as one buffer
+  var nb = ctx.createBuffer(1, len, sr), nd = nb.getChannelData(0);
+  var bed = (0.015 + opts.static / 100 * 0.22) * P.noise;
+  var crackRate = opts.crackle / 100 * 18 * (opts.signal === "weak" ? 1.6 : 1);
+  var on = Math.floor((pre - 0.06) * sr), off = Math.floor((pre + voice.duration + 0.12) * sr);
+  for (var j = 0; j < len; j++){
+    var a = 0;
+    if (j >= on && j < off) a = bed;
+    nd[j] = (rand() * 2 - 1) * a;
+  }
+  // crackle: short decaying pops
+  var pops = Math.floor((off - on) / sr * crackRate);
+  for (var p = 0; p < pops; p++){
+    var s0 = on + Math.floor(rand() * (off - on)), amp = (0.15 + rand() * 0.45) * P.noise, plen = 30 + Math.floor(rand() * 300);
+    for (var q = 0; q < plen && s0 + q < len; q++) nd[s0 + q] += (rand() * 2 - 1) * amp * Math.exp(-q / (plen / 4));
+  }
+  // squelch open: click + 70ms burst
+  var sq = Math.max(0, on - Math.floor(0.07 * sr));
+  nd[sq] += 0.8;
+  for (var u = 0; u < 0.07 * sr; u++) nd[sq + u] += (rand() * 2 - 1) * 0.35 * (1 - u / (0.07 * sr));
+  // squelch tail: 220ms burst after release, then click
+  var tl = Math.floor(0.22 * sr);
+  for (var v = 0; v < tl && off + v < len; v++) nd[off + v] += (rand() * 2 - 1) * 0.55 * Math.pow(1 - v / tl, 0.6);
+  if (off + tl < len) nd[off + tl] += -0.7;
+
+  var ns = ctx.createBufferSource(); ns.buffer = nb;
+  chain([ns, biquad(ctx, "highpass", 400, 0.7), biquad(ctx, "lowpass", 2800, 0.7), ctx.destination]);
+  ns.start(0);
+
+  return ctx.startRendering().then(function(buf){
+    var ch = buf.getChannelData(0), peak = 0;
+    for (var i = 0; i < ch.length; i++){ var m = Math.abs(ch[i]); if (m > peak) peak = m; }
+    var g = peak > 0 ? 0.89 / peak : 1;
+    for (var i2 = 0; i2 < ch.length; i2++) ch[i2] *= g;
+    return buf;
+  });
+}
+
+/* ---------- MP3 ---------- */
+function toMp3(buf){
+  if (typeof lamejs === "undefined") throw new Error("The MP3 encoder didn't load. Check the internet connection and reload.");
+  var ch = buf.getChannelData(0), n = ch.length, pcm = new Int16Array(n);
+  for (var i = 0; i < n; i++){ var s = Math.max(-1, Math.min(1, ch[i])); pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff; }
+  var enc = new lamejs.Mp3Encoder(1, buf.sampleRate, 96), out = [], block = 1152;
+  for (var j = 0; j < n; j += block){ var b = enc.encodeBuffer(pcm.subarray(j, j + block)); if (b.length) out.push(new Uint8Array(b)); }
+  var e = enc.flush(); if (e.length) out.push(new Uint8Array(e));
+  return new Blob(out, { type: "audio/mpeg" });
+}
+
+/* ---------- Transmit ---------- */
+var lastBlob = null, lastName = "atc.mp3", audioCtx = null;
+function fileName(freq, text){
+  var slug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "message";
+  return (freq ? freq.replace(/[^0-9.]/g, "") + "_" : "") + slug + ".mp3";
+}
+
+$("ptt").addEventListener("click", function(){
+  var text = $("msg").value.trim();
+  if (!text){ status("Type a message first.", "err"); return; }
+  if (!$("apiKey").value.trim()){ $("setup").open = true; status("Add your ElevenLabs API key in Setup first.", "err"); return; }
+  store.set("key", $("apiKey").value.trim());
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch(e){}
+  var btn = this; btn.disabled = true; lcd("TX", true); status("Getting Andrew's voice…", "ok");
+  var spoken = toSpoken(text, $("niner").checked);
+  tts(spoken).then(function(ab){
+    status("Adding the radio effect…", "ok");
+    return new Promise(function(res, rej){ audioCtx.decodeAudioData(ab, res, function(){ rej(new Error("Couldn't decode the audio from ElevenLabs.")); }); });
+  }).then(function(voice){
+    return radioize(voice, { signal: signal, static: +$("static").value, crackle: +$("crackle").value });
+  }).then(function(buf){
+    status("Encoding MP3…", "ok");
+    lastBlob = toMp3(buf);
+    lastName = fileName($("freq").value, text);
+    var p = $("player"); if (p.src) URL.revokeObjectURL(p.src);
+    p.src = URL.createObjectURL(lastBlob);
+    $("out").style.display = "block";
+    addRecent(text);
+    status("Ready: " + lastName + " (" + Math.round(lastBlob.size / 1024) + " KB)", "ok");
+    lcd("RX");
+    p.play().catch(function(){});
+  }).catch(function(err){
+    status(err.message || String(err), "err"); lcd("STBY");
+  }).then(function(){ btn.disabled = false; });
+});
+
+$("save").addEventListener("click", function(){
+  if (!lastBlob) return;
+  var file = null;
+  try { file = new File([lastBlob], lastName, { type: "audio/mpeg" }); } catch(e){}
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })){
+    navigator.share({ files: [file], title: lastName }).catch(function(){});
+    return;
+  }
+  var a = document.createElement("a"); a.href = URL.createObjectURL(lastBlob); a.download = lastName;
+  document.body.appendChild(a); a.click(); a.remove();
+});
+</script>
+</body>
+</html>
