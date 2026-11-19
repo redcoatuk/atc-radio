@@ -117,7 +117,17 @@ details summary{cursor:pointer;color:var(--dim);font-size:14px}
   <div class="plctl">
     <button type="button" class="btn go" id="plPlay">Play all</button>
     <button type="button" class="btn" id="plSave">Save all</button>
+    <button type="button" class="btn" id="plLoad">Load text file</button>
+    <input type="file" id="plFile" accept=".txt,text/plain" style="display:none">
     <label class="hint" style="margin:0;text-transform:none;letter-spacing:0">Gap <select id="plGap" style="width:auto;padding:6px"><option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option><option value="5">5 s</option><option value="10">10 s</option></select></label>
+  </div>
+  <div id="plConfirm" class="item" style="display:none;border-color:var(--amber)">
+    <div class="t" id="plConfirmText"></div>
+    <div class="acts">
+      <button type="button" class="go" id="plReplace">Replace playlist</button>
+      <button type="button" id="plAppend">Add to end</button>
+      <button type="button" class="x" id="plCancel">Cancel</button>
+    </div>
   </div>
   <div id="playlist"></div>
 </div>
@@ -318,7 +328,7 @@ function renderPl(){
   $("plSave").disabled = !p.length || plRunning;
   $("plPlay").disabled = !p.length && !plRunning;
   $("plPlay").textContent = plRunning ? "Stop" : "Play all";
-  if (!p.length){ var h = document.createElement("div"); h.className = "hint"; h.textContent = "Use + Add to playlist, or + Playlist on a History message. The MP3 is made straight away, ready to play."; box.appendChild(h); return; }
+  if (!p.length){ var h = document.createElement("div"); h.className = "hint"; h.textContent = "Use + Add to playlist, + Playlist on a History message, or Load text file (one message per line). The MP3s are made straight away, ready to play."; box.appendChild(h); return; }
   p.forEach(function(it, i){
     var r = row(it.t + (it.k ? "  ♪" : ""), [
       ["Play", "go", plRunning ? null : function(){ playItem(it); }],
@@ -573,6 +583,58 @@ function transmit(text){
 }
 $("addpl").addEventListener("click", function(){ addPl($("msg").value); });
 $("ptt").addEventListener("click", function(){ transmit($("msg").value); });
+
+/* ---------- Load playlist from a text file ---------- */
+var fileLines = [], building = false;
+$("plLoad").addEventListener("click", function(){
+  if (building){ building = false; this.textContent = "Load text file"; status("Stopping after the current message…", "ok"); return; }
+  $("plFile").value = ""; $("plFile").click();
+});
+$("plFile").addEventListener("change", function(){
+  var f = this.files && this.files[0]; if (!f) return;
+  var r = new FileReader();
+  r.onload = function(){
+    fileLines = String(r.result).replace(/^\uFEFF/, "").split(/\r?\n/).map(function(s){ return s.trim(); }).filter(Boolean);
+    if (!fileLines.length){ status("That file has no lines of text.", "err"); return; }
+    var chars = fileLines.map(function(s){ return toSpoken(s, $("niner").checked); }).join("").length;
+    $("plConfirmText").textContent = f.name + ": " + fileLines.length + " message" + (fileLines.length === 1 ? "" : "s") +
+      " (" + chars + " characters once numbers are spelled out). ElevenLabs charges about 1 credit per character, less for any already made.";
+    $("plReplace").style.display = pl().length ? "" : "none";
+    $("plAppend").textContent = pl().length ? "Add to end" : "Make playlist";
+    $("plConfirm").style.display = "";
+  };
+  r.onerror = function(){ status("Couldn't read that file.", "err"); };
+  r.readAsText(f);
+});
+$("plCancel").addEventListener("click", function(){ $("plConfirm").style.display = "none"; fileLines = []; });
+$("plReplace").addEventListener("click", function(){ buildFromLines(true); });
+$("plAppend").addEventListener("click", function(){ buildFromLines(false); });
+function buildFromLines(replace){
+  $("plConfirm").style.display = "none";
+  var lines = fileLines.slice(); fileLines = [];
+  if (!lines.length) return;
+  if (replace) savePl([]);
+  building = true; $("plLoad").textContent = "Stop loading"; $("addpl").disabled = true;
+  var made = 0, i = 0;
+  (function next(){
+    if (!building || i >= lines.length){
+      var stopped = !building && i < lines.length;
+      building = false; $("plLoad").textContent = "Load text file"; $("addpl").disabled = false;
+      status((stopped ? "Stopped. " : "") + "Added " + made + " of " + lines.length + " messages to the playlist.", "ok");
+      return;
+    }
+    var t = lines[i];
+    status("Making " + (i + 1) + " of " + lines.length + ": " + t, "ok");
+    generate(t).then(function(r){
+      return idbPut(r.key, r.blob).then(function(){
+        var p = pl(); p.push({ t: t, k: r.key }); savePl(p); addRecent(t); made++;
+      });
+    }).then(function(){ i++; next(); }, function(err){
+      building = false; $("plLoad").textContent = "Load text file"; $("addpl").disabled = false;
+      status("Stopped at line " + (i + 1) + ": " + (err.message || err) + " (" + made + " added)", "err");
+    });
+  })();
+}
 
 var TOUCH = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 function download(blob, name){
