@@ -12,7 +12,10 @@
 :root{--bg:#141618;--panel:#1f2326;--edge:#33393e;--lcd:#0d1a12;--lcdtxt:#7dff9a;--amber:#ffb340;--txt:#e6e8ea;--dim:#8a9399;--red:#e5484d}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 -apple-system,system-ui,sans-serif;padding:16px;padding-bottom:40px}
-.wrap{max-width:820px;margin:0 auto}
+.wrap{max-width:1100px;margin:0 auto}
+.cols{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:14px}
+.cols>.head{margin-bottom:0}
+@media (min-width:700px){.cols{grid-template-columns:1fr 1fr}}
 h1{font-size:15px;letter-spacing:.2em;color:var(--dim);margin:0 0 12px;font-weight:600}
 .head{background:linear-gradient(#2a2f33,#1c1f22);border:1px solid var(--edge);border-radius:14px;padding:16px;margin-bottom:14px}
 label{display:block;font-size:12px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase;margin:14px 0 6px}
@@ -37,11 +40,18 @@ input[type=range]{width:100%;accent-color:var(--amber)}
 .msg.ok{display:block;background:#15301c;color:#a6f0b7}
 .hist-head{display:flex;justify-content:space-between;align-items:center}
 .hist-head label{margin:0}
-.item{display:flex;align-items:center;gap:8px;background:#0f1113;border:1px solid var(--edge);border-radius:8px;padding:8px 10px;margin-bottom:6px}
-.item .t{flex:1;font-size:14px;min-width:0;overflow-wrap:anywhere}
-.item button{background:#2a3036;color:var(--txt);border:1px solid var(--edge);border-radius:6px;padding:7px 11px;font:inherit;font-size:14px;white-space:nowrap}
-.item button.go{background:#8f2327;border-color:#6b1d20;color:#fff}
-.item button.x{background:transparent;border:0;color:var(--dim);padding:7px 4px}
+.item{background:#0f1113;border:1px solid var(--edge);border-radius:8px;padding:8px 10px;margin-bottom:6px}
+.item.now{border-color:var(--amber)}
+.item .t{font-size:14px;overflow-wrap:anywhere;margin-bottom:6px}
+.item .t b{color:var(--amber);font-weight:600;margin-right:6px}
+.acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.acts button{background:#2a3036;color:var(--txt);border:1px solid var(--edge);border-radius:6px;padding:6px 10px;font:inherit;font-size:13px;white-space:nowrap}
+.acts button.go{background:#8f2327;border-color:#6b1d20;color:#fff}
+.acts button.x{background:transparent;border:0;color:var(--dim);margin-left:auto}
+.acts button:disabled{opacity:.35}
+.plctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px}
+.plctl .btn{margin-top:0}
+.btn.go{background:linear-gradient(#c23a3f,#8f2327);border-color:#6b1d20;color:#fff;font-weight:600}
 .linkbtn{background:none;border:0;color:var(--dim);font:inherit;font-size:13px;text-decoration:underline;padding:4px}
 details summary{cursor:pointer;color:var(--dim);font-size:14px}
 .hint{font-size:13px;color:var(--dim)}
@@ -91,10 +101,21 @@ details summary{cursor:pointer;color:var(--dim);font-size:14px}
   </div>
 </div>
 
+<div class="cols">
 <div class="head">
   <div class="hist-head"><label>History</label><button type="button" class="linkbtn" id="clearHist">Clear all</button></div>
-  <div class="hint" style="margin:4px 0 10px">Use puts a message back in the box to edit. Transmit sends it again straight away.</div>
+  <div class="hint" style="margin:4px 0 10px">Use puts a message back in the box. + Playlist adds it to the playlist.</div>
   <div id="recent"></div>
+</div>
+<div class="head">
+  <div class="hist-head"><label>Playlist</label><button type="button" class="linkbtn" id="clearPl">Clear all</button></div>
+  <div class="plctl">
+    <button type="button" class="btn go" id="plPlay">Transmit all</button>
+    <label class="hint" style="margin:0;text-transform:none;letter-spacing:0">Gap <select id="plGap" style="width:auto;padding:6px"><option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option><option value="5">5 s</option><option value="10">10 s</option></select></label>
+  </div>
+  <div id="playlist"></div>
+</div>
+</div>
 </div>
 
 <div class="head">
@@ -216,25 +237,94 @@ function renderRecent(){
   $("clearHist").style.display = r.length ? "" : "none";
   if (!r.length){ var p = document.createElement("div"); p.className = "hint"; p.textContent = "Messages you transmit are listed here."; box.appendChild(p); return; }
   r.forEach(function(t){
-    var row = document.createElement("div"); row.className = "item";
-    var tx = document.createElement("div"); tx.className = "t"; tx.textContent = t;
-    var use = document.createElement("button"); use.type = "button"; use.textContent = "Use";
-    use.addEventListener("click", function(){ useMsg(t); window.scrollTo({ top: 0, behavior: "smooth" }); $("msg").focus(); });
-    var go = document.createElement("button"); go.type = "button"; go.className = "go"; go.textContent = "Transmit";
-    go.addEventListener("click", function(){ useMsg(t); window.scrollTo({ top: 0, behavior: "smooth" }); $("ptt").click(); });
-    var del = document.createElement("button"); del.type = "button"; del.className = "x"; del.textContent = "✕"; del.setAttribute("aria-label", "Remove");
-    del.addEventListener("click", function(){ saveRecent(recent().filter(function(x){ return x !== t; })); });
-    row.appendChild(tx); row.appendChild(use); row.appendChild(go); row.appendChild(del);
-    box.appendChild(row);
+    box.appendChild(row(t, [
+      ["Use", "", function(){ useMsg(t); toTop(); $("msg").focus(); }],
+      ["Transmit", "go", function(){ useMsg(t); toTop(); $("ptt").click(); }],
+      ["+ Playlist", "", function(){ addPl(t); }],
+      ["✕", "x", function(){ saveRecent(recent().filter(function(x){ return x !== t; })); }, "Remove"]
+    ]));
   });
 }
-var clearArmed = null;
-$("clearHist").addEventListener("click", function(){
-  var b = this;
-  if (clearArmed){ clearTimeout(clearArmed); clearArmed = null; b.textContent = "Clear all"; saveRecent([]); return; }
-  b.textContent = "Tap again to clear";
-  clearArmed = setTimeout(function(){ clearArmed = null; b.textContent = "Clear all"; }, 3000);
+function toTop(){ try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch(e){ window.scrollTo(0, 0); } }
+function row(text, acts, num){
+  var r = document.createElement("div"); r.className = "item";
+  var tx = document.createElement("div"); tx.className = "t";
+  if (num){ var b = document.createElement("b"); b.textContent = num; tx.appendChild(b); }
+  tx.appendChild(document.createTextNode(text));
+  var a = document.createElement("div"); a.className = "acts";
+  acts.forEach(function(x){
+    var btn = document.createElement("button"); btn.type = "button"; btn.textContent = x[0];
+    if (x[1]) btn.className = x[1]; if (x[3]) btn.setAttribute("aria-label", x[3]);
+    if (x[2]) btn.addEventListener("click", x[2]); else btn.disabled = true;
+    a.appendChild(btn);
+  });
+  r.appendChild(tx); r.appendChild(a); return r;
+}
+function armedClear(btn, fn){
+  var armed = null;
+  btn.addEventListener("click", function(){
+    if (armed){ clearTimeout(armed); armed = null; btn.textContent = "Clear all"; fn(); return; }
+    btn.textContent = "Tap again to clear";
+    armed = setTimeout(function(){ armed = null; btn.textContent = "Clear all"; }, 3000);
+  });
+}
+
+/* ---------- Playlist ---------- */
+function pl(){ try { return JSON.parse(store.get("playlist", "[]")); } catch(e){ return []; } }
+function savePl(p){ store.set("playlist", JSON.stringify(p)); renderPl(); }
+function addPl(t){ var p = pl(); p.push(t); savePl(p); }
+function movePl(i, d){ var p = pl(), j = i + d; if (j < 0 || j >= p.length) return; var x = p[i]; p[i] = p[j]; p[j] = x; savePl(p); }
+var plNow = -1, plRunning = false;
+function renderPl(){
+  var box = $("playlist"); box.innerHTML = "";
+  var p = pl();
+  $("clearPl").style.display = p.length ? "" : "none";
+  $("plPlay").disabled = !p.length && !plRunning;
+  $("plPlay").textContent = plRunning ? "Stop" : "Transmit all";
+  if (!p.length){ var h = document.createElement("div"); h.className = "hint"; h.textContent = "Tap + Playlist on a History message to add it here."; box.appendChild(h); return; }
+  p.forEach(function(t, i){
+    var r = row(t, [
+      ["Transmit", "go", plRunning ? null : function(){ useMsg(t); transmit(t); }],
+      ["↑", "", i > 0 && !plRunning ? function(){ movePl(i, -1); } : null, "Move up"],
+      ["↓", "", i < p.length - 1 && !plRunning ? function(){ movePl(i, 1); } : null, "Move down"],
+      ["✕", "x", plRunning ? null : function(){ var q = pl(); q.splice(i, 1); savePl(q); }, "Remove"]
+    ], (i + 1) + ".");
+    if (i === plNow) r.classList.add("now");
+    box.appendChild(r);
+  });
+}
+$("plGap").value = store.get("gap", "2");
+$("plGap").addEventListener("change", function(){ store.set("gap", this.value); });
+armedClear($("clearPl"), function(){ savePl([]); });
+
+function waitEnd(){
+  return new Promise(function(res){
+    var p = $("player");
+    var done = function(){ p.removeEventListener("ended", done); clearInterval(iv); res(); };
+    var iv = setInterval(function(){ if (!plRunning) done(); }, 200);
+    p.addEventListener("ended", done);
+  });
+}
+function sleep(s){ return new Promise(function(res){ var t = 0, iv = setInterval(function(){ t += 0.2; if (!plRunning || t >= s){ clearInterval(iv); res(); } }, 200); }); }
+$("plPlay").addEventListener("click", function(){
+  if (plRunning){ plRunning = false; plNow = -1; try { $("player").pause(); } catch(e){} status("Playlist stopped.", "ok"); renderPl(); return; }
+  var items = pl(); if (!items.length) return;
+  unlockAudio();
+  try { var pe = $("player"); pe.src = SILENT; var pp = pe.play(); if (pp) pp.catch(function(){}); } catch(e){}
+  plRunning = true; renderPl();
+  var i = 0;
+  (function next(){
+    if (!plRunning || i >= items.length){ var fin = plRunning; plRunning = false; plNow = -1; renderPl(); if (fin) status("Playlist finished.", "ok"); return; }
+    plNow = i; renderPl(); useMsg(items[i]);
+    transmit(items[i]).then(function(ok){
+      if (!ok){ var was = plRunning; plRunning = false; plNow = -1; renderPl(); if (was && /^Ready/.test($("status").textContent)) status("The iPad blocked playback. Tap Transmit all again.", "err"); return; }
+      return waitEnd().then(function(){ i++; return i < items.length ? sleep(+$("plGap").value) : null; }).then(next);
+    });
+  })();
 });
+renderPl();
+
+armedClear($("clearHist"), function(){ saveRecent([]); });
 renderRecent();
 
 function status(text, kind){ var s = $("status"); s.textContent = text; s.className = "msg " + (kind || ""); }
@@ -373,34 +463,49 @@ function fileName(text){
   return "atc_" + slug + ".mp3";
 }
 
-$("ptt").addEventListener("click", function(){
-  var text = $("msg").value.trim();
-  if (!text){ status("Type a message first.", "err"); return; }
-  if (!$("apiKey").value.trim()){ $("setup").open = true; status("Add your ElevenLabs API key in Setup first.", "err"); return; }
+var cache = {};
+var SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+function unlockAudio(){ try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch(e){} }
+function settingsKey(t){
+  return [t, $("niner").checked, signal, $("static").value, $("crackle").value, $("speed").value, $("voiceId").value.trim(), $("model").value].join("|");
+}
+function play(blob, text){
+  lastBlob = blob; lastName = fileName(text);
+  var p = $("player"); if (p.src) URL.revokeObjectURL(p.src);
+  p.src = URL.createObjectURL(blob);
+  $("out").style.display = "block";
+  return p.play().then(function(){ return true; }, function(){ return false; });
+}
+// Returns a promise of true (played) or false (failed)
+function transmit(text){
+  text = (text || "").trim();
+  if (!text){ status("Type a message first.", "err"); return Promise.resolve(false); }
+  var key = settingsKey(text);
+  unlockAudio();
+  if (cache[key]){
+    addRecent(text); status("Replaying " + fileName(text) + " (no credits used)", "ok");
+    return play(cache[key], text);
+  }
+  if (!$("apiKey").value.trim()){ $("setup").open = true; status("Add your ElevenLabs API key in Setup first.", "err"); return Promise.resolve(false); }
   store.set("key", $("apiKey").value.trim());
-  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch(e){}
-  var btn = this; btn.disabled = true; lcd("TX", true); status("Getting Andrew's voice…", "ok");
-  var spoken = toSpoken(text, $("niner").checked);
-  tts(spoken).then(function(ab){
+  var btn = $("ptt"); btn.disabled = true; status("Getting Andrew's voice…", "ok");
+  return tts(toSpoken(text, $("niner").checked)).then(function(ab){
     status("Adding the radio effect…", "ok");
     return new Promise(function(res, rej){ audioCtx.decodeAudioData(ab, res, function(){ rej(new Error("Couldn't decode the audio from ElevenLabs.")); }); });
   }).then(function(voice){
     return radioize(voice, { signal: signal, static: +$("static").value, crackle: +$("crackle").value });
   }).then(function(buf){
     status("Encoding MP3…", "ok");
-    lastBlob = toMp3(buf);
-    lastName = fileName(text);
-    var p = $("player"); if (p.src) URL.revokeObjectURL(p.src);
-    p.src = URL.createObjectURL(lastBlob);
-    $("out").style.display = "block";
+    var blob = toMp3(buf);
+    cache[key] = blob;
     addRecent(text);
-    status("Ready: " + lastName + " (" + Math.round(lastBlob.size / 1024) + " KB)", "ok");
-    lcd("RX");
-    p.play().catch(function(){});
+    status("Ready: " + fileName(text) + " (" + Math.round(blob.size / 1024) + " KB)", "ok");
+    return play(blob, text).then(function(ok){ if (!ok) status("Ready: tap play below to hear it.", "ok"); return ok; });
   }).catch(function(err){
-    status(err.message || String(err), "err"); lcd("STBY");
-  }).then(function(){ btn.disabled = false; });
-});
+    status(err.message || String(err), "err"); return false;
+  }).then(function(ok){ btn.disabled = false; return ok; });
+}
+$("ptt").addEventListener("click", function(){ transmit($("msg").value); });
 
 $("save").addEventListener("click", function(){
   if (!lastBlob) return;
